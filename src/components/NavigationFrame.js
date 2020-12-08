@@ -12,13 +12,18 @@ import { useWalletSelector } from '../utils/wallet';
 import ListItemIcon from '@material-ui/core/ListItemIcon';
 import CheckIcon from '@material-ui/icons/Check';
 import AddIcon from '@material-ui/icons/Add';
+import ExitToApp from '@material-ui/icons/ExitToApp';
 import AccountIcon from '@material-ui/icons/AccountCircle';
+import UsbIcon from '@material-ui/icons/Usb';
 import Divider from '@material-ui/core/Divider';
 import Hidden from '@material-ui/core/Hidden';
 import IconButton from '@material-ui/core/IconButton';
 import SolanaIcon from './SolanaIcon';
 import CodeIcon from '@material-ui/icons/Code';
 import Tooltip from '@material-ui/core/Tooltip';
+import AddAccountDialog from './AddAccountDialog';
+import DeleteAccountDialog from './DeleteAccountDialog';
+import AddHardwareWalletDialog from './AddHarwareWalletDialog';
 
 const useStyles = makeStyles((theme) => ({
   content: {
@@ -125,16 +130,59 @@ function NetworkSelector() {
 }
 
 function WalletSelector() {
-  const { addresses, walletIndex, setWalletIndex } = useWalletSelector();
+  const { accounts, setWalletSelector, addAccount } = useWalletSelector();
   const [anchorEl, setAnchorEl] = useState(null);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [
+    addHardwareWalletDialogOpen,
+    setAddHardwareWalletDialogOpen,
+  ] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [isDeleteAccountEnabled, setIsDeleteAccountEnabled] = useState(false);
   const classes = useStyles();
 
-  if (addresses.length === 0) {
+  if (accounts.length === 0) {
     return null;
   }
 
   return (
     <>
+      <AddHardwareWalletDialog
+        open={addHardwareWalletDialogOpen}
+        onClose={() => setAddHardwareWalletDialogOpen(false)}
+        onAdd={(pubKey) => {
+          addAccount({
+            name: 'Hardware wallet',
+            importedAccount: pubKey.toString(),
+            ledger: true,
+          });
+          setWalletSelector({
+            walletIndex: undefined,
+            importedPubkey: pubKey.toString(),
+            ledger: true,
+          });
+        }}
+      />
+      <AddAccountDialog
+        open={addAccountOpen}
+        onClose={() => setAddAccountOpen(false)}
+        onAdd={({ name, importedAccount }) => {
+          addAccount({ name, importedAccount });
+          setWalletSelector({
+            walletIndex: importedAccount ? undefined : accounts.length,
+            importedPubkey: importedAccount
+              ? importedAccount.publicKey.toString()
+              : undefined,
+            ledger: false,
+          });
+          setAddAccountOpen(false);
+        }}
+      />
+      <DeleteAccountDialog
+        open={deleteAccountOpen}
+        onClose={() => setDeleteAccountOpen(false)}
+        isDeleteAccountEnabled={isDeleteAccountEnabled}
+      />
       <Hidden xsDown>
         <Button
           color="inherit"
@@ -161,32 +209,59 @@ function WalletSelector() {
         }}
         getContentAnchorEl={null}
       >
-        {addresses.map((address, index) => (
+        {accounts.map(({ isSelected, selector, address, name, label }) => (
           <MenuItem
             key={address.toBase58()}
             onClick={() => {
               setAnchorEl(null);
-              setWalletIndex(index);
+              setWalletSelector(selector);
             }}
-            selected={index === walletIndex}
+            selected={isSelected}
+            component="div"
           >
             <ListItemIcon className={classes.menuItemIcon}>
-              {index === walletIndex ? <CheckIcon fontSize="small" /> : null}
+              {isSelected ? <CheckIcon fontSize="small" /> : null}
             </ListItemIcon>
-            {address.toBase58()}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography>{name}</Typography>
+              <Typography color="textSecondary">
+                {address.toBase58()}
+              </Typography>
+            </div>
           </MenuItem>
         ))}
         <Divider />
+        <MenuItem onClick={() => setAddHardwareWalletDialogOpen(true)}>
+          <ListItemIcon className={classes.menuItemIcon}>
+            <UsbIcon fontSize="small" />
+          </ListItemIcon>
+          Import Hardware Wallet
+        </MenuItem>
         <MenuItem
           onClick={() => {
             setAnchorEl(null);
-            setWalletIndex(addresses.length);
+            setAddAccountOpen(true);
           }}
         >
           <ListItemIcon className={classes.menuItemIcon}>
             <AddIcon fontSize="small" />
           </ListItemIcon>
-          Create Account
+          Add Account
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setAnchorEl(null);
+            setIsDeleteAccountEnabled(false);
+            setDeleteAccountOpen(true);
+            setTimeout(() => {
+              setIsDeleteAccountEnabled(true);
+            }, 3000);
+          }}
+        >
+          <ListItemIcon className={classes.menuItemIcon}>
+            <ExitToApp fontSize="small" />
+          </ListItemIcon>
+          Delete Account
         </MenuItem>
       </Menu>
     </>

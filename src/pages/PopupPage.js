@@ -1,13 +1,19 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useWallet, useWalletPublicKeys } from '../utils/wallet';
 import { decodeMessage } from '../utils/transactions';
 import { useConnection, useSolanaExplorerUrlSuffix } from '../utils/connection';
 import {
-  Typography,
   Divider,
-  Switch,
   FormControlLabel,
   SnackbarContent,
+  Switch,
+  Typography,
 } from '@material-ui/core';
 import CircularProgress from '@material-ui/core/CircularProgress';
 import Box from '@material-ui/core/Box';
@@ -19,7 +25,6 @@ import ImportExportIcon from '@material-ui/icons/ImportExport';
 import { makeStyles } from '@material-ui/core/styles';
 import assert from 'assert';
 import bs58 from 'bs58';
-import nacl from 'tweetnacl';
 import NewOrder from '../components/instructions/NewOrder';
 import UnknownInstruction from '../components/instructions/UnknownInstruction';
 import WarningIcon from '@material-ui/icons/Warning';
@@ -64,10 +69,7 @@ export default function PopupPage({ opener }) {
 
   // Disconnect if the user switches to a different wallet.
   useEffect(() => {
-    if (
-      connectedAccount &&
-      !connectedAccount.publicKey.equals(wallet.publicKey)
-    ) {
+    if (connectedAccount && !connectedAccount.equals(wallet.publicKey)) {
       setConnectedAccount(null);
     }
   }, [connectedAccount, wallet]);
@@ -79,6 +81,7 @@ export default function PopupPage({ opener }) {
         if (e.data.method !== 'signTransaction') {
           postMessage({ error: 'Unsupported method', id: e.data.id });
         }
+
         setRequests((requests) => [...requests, e.data]);
       }
     }
@@ -86,13 +89,10 @@ export default function PopupPage({ opener }) {
     return () => window.removeEventListener('message', messageHandler);
   }, [origin, postMessage]);
 
-  if (
-    !connectedAccount ||
-    !connectedAccount.publicKey.equals(wallet.publicKey)
-  ) {
+  if (!connectedAccount || !connectedAccount.equals(wallet.publicKey)) {
     // Approve the parent page to connect to this wallet.
     function connect(autoApprove) {
-      setConnectedAccount(wallet.account);
+      setConnectedAccount(wallet.publicKey);
       postMessage({
         method: 'connected',
         params: { publicKey: wallet.publicKey.toBase58(), autoApprove },
@@ -109,13 +109,11 @@ export default function PopupPage({ opener }) {
     assert(request.method === 'signTransaction');
     const message = bs58.decode(request.params.message);
 
-    function sendSignature() {
+    async function sendSignature() {
       setRequests((requests) => requests.slice(1));
       postMessage({
         result: {
-          signature: bs58.encode(
-            nacl.sign.detached(message, wallet.account.secretKey),
-          ),
+          signature: await wallet.createSignature(message),
           publicKey: wallet.publicKey.toBase58(),
         },
         id: request.id,
@@ -168,6 +166,10 @@ const useStyles = makeStyles((theme) => ({
   },
   transaction: {
     wordBreak: 'break-all',
+  },
+  approveButton: {
+    backgroundColor: '#43a047',
+    color: 'white',
   },
   actions: {
     justifyContent: 'space-between',
@@ -374,6 +376,7 @@ function ApproveSignatureForm({
 
   const [parsing, setParsing] = useState(true);
   const [instructions, setInstructions] = useState(null);
+  const buttonRef = useRef();
 
   useEffect(() => {
     decodeMessage(connection, wallet, message).then((instructions) => {
@@ -382,21 +385,33 @@ function ApproveSignatureForm({
     });
   }, [message, connection, wallet]);
 
-  const safe = useMemo(() => {
-    return (
-      publicKeys &&
-      instructions &&
-      isSafeInstruction(publicKeys, wallet.publicKey, instructions)
-    );
+  const validator = useMemo(() => {
+    return {
+      safe:
+        publicKeys &&
+        instructions &&
+        isSafeInstruction(publicKeys, wallet.publicKey, instructions),
+    };
   }, [publicKeys, instructions, wallet]);
 
   useEffect(() => {
-    if (safe && autoApprove) {
+    if (validator.safe && autoApprove) {
       console.log('Auto approving safe transaction');
       onApprove();
+    } else {
+      // brings window to front when we receive new instructions
+      // this needs to be executed from wallet instead of adapter
+      // to ensure chrome brings window to front
+      window.focus();
+
+      // scroll to approve button and focus it to enable approve with enter
+      if (buttonRef.current) {
+        buttonRef.current.scrollIntoView({ behavior: 'smooth' });
+        setTimeout(() => buttonRef.current.focus(), 50);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safe, autoApprove]);
+  }, [validator, autoApprove, buttonRef]);
 
   const onOpenAddress = (address) => {
     address &&
@@ -498,7 +513,7 @@ function ApproveSignatureForm({
                 </Typography>
               </>
             )}
-            {!safe && (
+            {!validator.safe && (
               <SnackbarContent
                 className={classes.warningContainer}
                 message={
@@ -521,7 +536,13 @@ function ApproveSignatureForm({
       </CardContent>
       <CardActions className={classes.actions}>
         <Button onClick={onReject}>Cancel</Button>
-        <Button color="primary" onClick={onApprove}>
+        <Button
+          ref={buttonRef}
+          className={classes.approveButton}
+          variant="contained"
+          color="primary"
+          onClick={onApprove}
+        >
           Approve
         </Button>
       </CardActions>

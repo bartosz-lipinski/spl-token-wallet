@@ -20,7 +20,7 @@ export default function DebugButtons() {
   const wallet = useWallet();
   const updateTokenName = useUpdateTokenName();
   const { endpoint } = useConnectionConfig();
-  const balanceInfo = useBalanceInfo(wallet.account.publicKey);
+  const balanceInfo = useBalanceInfo(wallet.publicKey);
   const [sendTransaction, sending] = useSendTransaction();
   const callAsync = useCallAsync();
 
@@ -28,14 +28,11 @@ export default function DebugButtons() {
 
   function requestAirdrop() {
     callAsync(
-      wallet.connection.requestAirdrop(
-        wallet.account.publicKey,
-        LAMPORTS_PER_SOL,
-      ),
+      wallet.connection.requestAirdrop(wallet.publicKey, LAMPORTS_PER_SOL),
       {
         onSuccess: async () => {
           await sleep(5000);
-          refreshAccountInfo(wallet.connection, wallet.account.publicKey);
+          refreshAccountInfo(wallet.connection, wallet.publicKey);
         },
         successMessage:
           'Success! Please wait up to 30 seconds for the SOL tokens to appear in your wallet.',
@@ -53,7 +50,7 @@ export default function DebugButtons() {
     sendTransaction(
       createAndInitializeMint({
         connection: wallet.connection,
-        owner: wallet.account,
+        owner: wallet,
         mint,
         amount: 1000,
         decimals: 2,
